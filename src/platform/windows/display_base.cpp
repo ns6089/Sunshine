@@ -440,7 +440,7 @@ int display_base_t::init(const ::video::config_t &config, const std::string &dis
     refresh_rate = std::round((double)timing_info.rateRefresh.uiNumerator / (double)timing_info.rateRefresh.uiDenominator);
   }
 
-  dup.use_dwmflush = config::video.dwmflush && !(config.framerate > refresh_rate) ? true : false;
+  dup.use_dwmflush = config::video.dwmflush && config.framerate <= refresh_rate;
 
   // Bump up thread priority
   {
