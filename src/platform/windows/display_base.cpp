@@ -428,23 +428,23 @@ int display_base_t::init(const ::video::config_t &config, const std::string &dis
     << "Virtual Desktop    : "sv << env_width << 'x' << env_height;
 
   // Enable DwmFlush() only if the current refresh rate can match the client framerate.
-  auto refresh_rate = config.framerate;
-  DWM_TIMING_INFO timing_info;
-  timing_info.cbSize = sizeof(timing_info);
+  auto check_refresh_rate = [&]() {
+    DWM_TIMING_INFO timing_info = { sizeof(timing_info) };
+    if(FAILED(DwmGetCompositionTimingInfo(NULL, &timing_info))) {
+      BOOST_LOG(warning) << "Failed to detect monitor refresh rate with DwmGetCompositionTimingInfo()" << std::endl;
+      BOOST_LOG(info) << "Disabling DwmFlush because monitor refresh rate is unknown" << std::endl;
+      return false;
+    }
 
-  status = DwmGetCompositionTimingInfo(NULL, &timing_info);
-  if(FAILED(status)) {
-    BOOST_LOG(warning) << "Failed to detect active refresh rate.";
-  }
-  else {
-    refresh_rate = std::round((double)timing_info.rateRefresh.uiNumerator / (double)timing_info.rateRefresh.uiDenominator);
-  }
+    int refresh_rate = std::round((double)timing_info.rateRefresh.uiNumerator / (double)timing_info.rateRefresh.uiDenominator);
+    if(config.framerate > refresh_rate) {
+      BOOST_LOG(info) << "Disabling DwmFlush because client frame rate exceeds monitor refresh rate" << std::endl;
+      return false;
+    }
 
-  dup.use_dwmflush = config::video.dwmflush;
-  if (dup.use_dwmflush && config.framerate > refresh_rate) {
-    dup.use_dwmflush = false;
-    BOOST_LOG(info) << "Disabling DwmFlush() because client frame rate exceeds monitor refresh rate." << std::endl;
-  }
+    return true;
+  };
+  dup.use_dwmflush = config::video.dwmflush && check_refresh_rate();
 
   // Bump up thread priority
   {
