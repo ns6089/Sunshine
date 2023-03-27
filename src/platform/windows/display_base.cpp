@@ -440,7 +440,11 @@ int display_base_t::init(const ::video::config_t &config, const std::string &dis
     refresh_rate = std::round((double)timing_info.rateRefresh.uiNumerator / (double)timing_info.rateRefresh.uiDenominator);
   }
 
-  dup.use_dwmflush = config::video.dwmflush && config.framerate <= refresh_rate;
+  dup.use_dwmflush = config::video.dwmflush;
+  if (dup.use_dwmflush && config.framerate > refresh_rate) {
+    dup.use_dwmflush = false;
+    BOOST_LOG(info) << "Disabling DwmFlush() because client frame rate exceeds monitor refresh rate." << std::endl;
+  }
 
   // Bump up thread priority
   {
