@@ -793,10 +793,64 @@ namespace video {
 
     constexpr auto capture_buffer_normal_size = 1;
     constexpr auto capture_buffer_size = 12;
-    std::list<std::shared_ptr<platf::img_t>> imgs(capture_buffer_size);
+    using capture_buffer_type = std::list<std::shared_ptr<platf::img_t>>;
+    capture_buffer_type imgs(capture_buffer_size);
+
+    struct {
+      using steady_clock = std::chrono::steady_clock;
+      struct {
+        decltype(steady_clock::now()) last_print_time = steady_clock::now();
+        std::map<size_t, size_t> allocated_history;
+        std::map<size_t, size_t> used_history;
+        int min_call_interval_ms = std::numeric_limits<int>::max();
+        int max_call_interval_ms = 0;
+        decltype(steady_clock::now()) last_call_time = steady_clock::now();
+        int calls_number = 0;
+      } data;
+
+      void
+      print_info(const capture_buffer_type &imgs, std::chrono::seconds interval_in_seconds) {
+        const auto now = steady_clock::now();
+        if (now > data.last_print_time + interval_in_seconds) {
+          std::string info_string;
+          for (const auto &info_pair : data.allocated_history) {
+            info_string += " [" + std::to_string(info_pair.first) + ":" + std::to_string(info_pair.second) + "]";
+          }
+          BOOST_LOG(info) << "Pull free image allocated history [size:count]:" << info_string;
+          info_string.clear();
+          for (const auto &info_pair : data.used_history) {
+            info_string += " [" + std::to_string(info_pair.first) + ":" + std::to_string(info_pair.second) + "]";
+          }
+          BOOST_LOG(info) << "Pull free image used history [size:count]:" << info_string;
+          int avg_interval = std::chrono::duration<float, std::milli>(now - data.last_print_time).count() / data.calls_number;
+          BOOST_LOG(info) << "Pull free image intervals (min/max/avg): (" << data.min_call_interval_ms << "ms/" << data.max_call_interval_ms << "ms/" << avg_interval << "ms)";
+          data = {};
+        }
+        else {
+          int allocated = 0;
+          int used = 0;
+          for (auto &img : imgs) {
+            if (img) {
+              allocated++;
+              if (img.use_count() > 1) {
+                used++;
+              }
+            }
+          }
+          data.allocated_history[allocated] += 1;
+          data.used_history[used] += 1;
+          const int call_interval_ms = std::chrono::duration<float, std::milli>(now - data.last_call_time).count();
+          data.min_call_interval_ms = std::min(data.min_call_interval_ms, call_interval_ms);
+          data.max_call_interval_ms = std::max(data.max_call_interval_ms, call_interval_ms);
+          data.last_call_time = now;
+          data.calls_number += 1;
+        }
+      }
+    } pull_free_image_info_tracker;
 
     auto pull_free_image_callback = [&](std::shared_ptr<platf::img_t> &img_out) -> bool {
       img_out.reset();
+      pull_free_image_info_tracker.print_info(imgs, 10s);
       while (capture_ctx_queue->running()) {
         for (auto it = imgs.begin(); it != imgs.end(); it++) {
           // pick first unallocated or unused
