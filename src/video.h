@@ -76,11 +76,13 @@ namespace video {
     int dynamicRange;
   };
 
+  // also change platform/linux/cuda.cu when changing these
   using float4 = float[4];
   using float3 = float[3];
   using float2 = float[2];
 
   struct alignas(16) color_t {
+    // also change platform/linux/cuda.cu when changing this
     float4 color_vec_y;
     float4 color_vec_u;
     float4 color_vec_v;
@@ -88,7 +90,19 @@ namespace video {
     float2 range_uv;
   };
 
-  extern color_t colors[6];
+  enum sunshine_colors_idx : size_t {
+    // also change platform/linux/cuda.cu when changing this
+    SUNSHINE_BT601_MPEG = 0,
+    SUNSHINE_BT601_JPEG,
+    SUNSHINE_BT709_MPEG,
+    SUNSHINE_BT709_JPEG,
+    SUNSHINE_BT2020_MPEG,
+    SUNSHINE_BT2020_JPEG,
+    SUNSHINE_COLORS_SIZE
+  };
+
+  // also change platform/linux/cuda.cu when changing this
+  extern color_t colors[SUNSHINE_COLORS_SIZE];
 
   void
   capture(

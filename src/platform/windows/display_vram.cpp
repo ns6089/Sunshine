@@ -348,18 +348,18 @@ namespace platf::dxgi {
     void
     set_colorspace(std::uint32_t colorspace, std::uint32_t color_range) override {
       switch (colorspace) {
-        case 5:  // SWS_CS_SMPTE170M
-          color_p = &::video::colors[0];
+        case 5: // SWS_CS_SMPTE170M
+          color_p = &video::colors[video::SUNSHINE_BT601_MPEG];
           break;
-        case 1:  // SWS_CS_ITU709
-          color_p = &::video::colors[2];
+        case 1: // SWS_CS_ITU709
+          color_p = &video::colors[video::SUNSHINE_BT709_MPEG];
           break;
-        case 9:  // SWS_CS_BT2020
-          color_p = &::video::colors[4];
+        case 9: // SWS_CS_BT2020
+          color_p = &video::colors[video::SUNSHINE_BT2020_MPEG];
           break;
         default:
           BOOST_LOG(warning) << "Colorspace: ["sv << colorspace << "] not yet supported: switching to default"sv;
-          color_p = &::video::colors[0];
+          color_p = &video::colors[video::SUNSHINE_BT2020_MPEG];
       };
 
       if (color_range > 1) {

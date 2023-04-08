@@ -29,14 +29,22 @@ using namespace std::literals;
 
 using namespace std::literals;
 
-//////////////////// Special desclarations
 /**
- * NVCC segfaults when including <chrono>
- * Therefore, some declarations need to be added explicitely
+ * NVCC tends to have errors on different c++ headers from version to version.
+ * It's better to copy what we need and minimize the amount of included standard headers.
  */
 namespace platf {
-struct img_t {
-public:
+
+struct img_t { // copied from platform/common.h
+  img_t() = default;
+
+  img_t(img_t &&) = delete;
+  img_t(const img_t &) = delete;
+  img_t &
+  operator=(img_t &&) = delete;
+  img_t &
+  operator=(const img_t &) = delete;
+
   std::uint8_t *data {};
   std::int32_t width {};
   std::int32_t height {};
@@ -45,12 +53,14 @@ public:
 
   virtual ~img_t() = default;
 };
+
 } // namespace platf
 
-namespace video {
-using __float4 = float[4];
-using __float3 = float[3];
-using __float2 = float[2];
+namespace video { // copied from video.h
+
+using float4 = float[4];
+using float3 = float[3];
+using float2 = float[2];
 
 struct alignas(16) color_t {
   float4 color_vec_y;
@@ -60,22 +70,36 @@ struct alignas(16) color_t {
   float2 range_uv;
 };
 
-struct alignas(16) color_extern_t {
-  __float4 color_vec_y;
-  __float4 color_vec_u;
-  __float4 color_vec_v;
-  __float2 range_y;
-  __float2 range_uv;
+enum sunshine_colors_idx : size_t {
+  SUNSHINE_BT601_MPEG = 0,
+  SUNSHINE_BT601_JPEG,
+  SUNSHINE_BT709_MPEG,
+  SUNSHINE_BT709_JPEG,
+  SUNSHINE_BT2020_MPEG,
+  SUNSHINE_BT2020_JPEG,
+  SUNSHINE_COLORS_SIZE
 };
 
-static_assert(sizeof(video::color_t) == sizeof(video::color_extern_t), "color matrix struct mismatch");
+extern color_t colors[SUNSHINE_COLORS_SIZE];
 
-extern color_t colors[4];
 } // namespace video
 
-//////////////////// End special declarations
-
 namespace cuda {
+
+// this is CUDA vector equivalent of video::color_t
+// it can be cast from memory pointer as long as internal structure remains the same
+struct alignas(16) vec_color_t {
+  float4 color_vec_y;
+  float4 color_vec_u;
+  float4 color_vec_v;
+  float2 range_y;
+  float2 range_uv;
+};
+
+static_assert(!std::is_same_v<decltype(video::color_t::color_vec_y), decltype(cuda::vec_color_t::color_vec_y)>, "cuda vector types bled into video::color_t");
+static_assert(sizeof(video::color_t) == sizeof(cuda::vec_color_t), "color matrix struct size mismatch");
+static_assert(alignof(video::color_t) == alignof(cuda::vec_color_t), "color matrix struct alignment mismatch");
+
 auto constexpr INVALID_TEXTURE = std::numeric_limits<cudaTextureObject_t>::max();
 
 template<class T>
@@ -135,7 +159,7 @@ inline __device__ float3 bgra_to_rgb(float4 vec) {
   return make_float3(vec.z, vec.y, vec.x);
 }
 
-inline __device__ float2 calcUV(float3 pixel, const video::color_t *const color_matrix) {
+inline __device__ float2 calcUV(float3 pixel, const vec_color_t *const color_matrix) {
   float4 vec_u = color_matrix->color_vec_u;
   float4 vec_v = color_matrix->color_vec_v;
 
@@ -148,7 +172,7 @@ inline __device__ float2 calcUV(float3 pixel, const video::color_t *const color_
   return make_float2(u, v);
 }
 
-inline __device__ float calcY(float3 pixel, const video::color_t *const color_matrix) {
+inline __device__ float calcY(float3 pixel, const vec_color_t *const color_matrix) {
   float4 vec_y = color_matrix->color_vec_y;
 
   return (dot(pixel, make_float3(vec_y)) + vec_y.w) * color_matrix->range_y.x + color_matrix->range_y.y;
@@ -157,7 +181,7 @@ inline __device__ float calcY(float3 pixel, const video::color_t *const color_ma
 __global__ void RGBA_to_NV12(
   cudaTextureObject_t srcImage, std::uint8_t *dstY, std::uint8_t *dstUV,
   std::uint32_t dstPitchY, std::uint32_t dstPitchUV,
-  float scale, const viewport_t viewport, const video::color_t *const color_matrix) {
+  float scale, const viewport_t viewport, const vec_color_t *const color_matrix) {
 
   int idX = (threadIdx.x + blockDim.x * blockIdx.x) * 2;
   int idY = (threadIdx.y + blockDim.y * blockIdx.y) * 2;
@@ -307,7 +331,7 @@ int sws_t::convert(std::uint8_t *Y, std::uint8_t *UV, std::uint32_t pitchY, std:
   dim3 block(threadsPerBlock);
   dim3 grid(div_align(threadsX, threadsPerBlock), threadsY);
 
-  RGBA_to_NV12<<<grid, block, 0, stream>>>(texture, Y, UV, pitchY, pitchUV, scale, viewport, (video::color_t *)color_matrix.get());
+  RGBA_to_NV12<<<grid, block, 0, stream>>>(texture, Y, UV, pitchY, pitchUV, scale, viewport, (vec_color_t *)color_matrix.get());
 
   return CU_CHECK_IGNORE(cudaGetLastError(), "RGBA_to_NV12 failed");
 }
@@ -316,16 +340,16 @@ void sws_t::set_colorspace(std::uint32_t colorspace, std::uint32_t color_range) 
   video::color_t *color_p;
   switch(colorspace) {
   case 5: // SWS_CS_SMPTE170M
-    color_p = &video::colors[0];
+    color_p = &video::colors[video::SUNSHINE_BT601_MPEG];
     break;
   case 1: // SWS_CS_ITU709
-    color_p = &video::colors[2];
+    color_p = &video::colors[video::SUNSHINE_BT709_MPEG];
     break;
   case 9: // SWS_CS_BT2020
-    color_p = &video::colors[4];
+    color_p = &video::colors[video::SUNSHINE_BT2020_MPEG];
     break;
   default:
-    color_p = &video::colors[0];
+    color_p = &video::colors[video::SUNSHINE_BT601_MPEG];
   };
 
   if(color_range > 1) {
