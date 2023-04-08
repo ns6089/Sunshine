@@ -791,7 +791,7 @@ namespace video {
     }
     display_wp = disp;
 
-    constexpr auto capture_buffer_normal_size = 1;
+    constexpr auto capture_buffer_normal_size = 2;
     constexpr auto capture_buffer_size = 12;
     using capture_buffer_type = std::list<std::shared_ptr<platf::img_t>>;
     capture_buffer_type imgs(capture_buffer_size);
