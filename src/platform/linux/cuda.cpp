@@ -65,7 +65,7 @@ namespace cuda {
     CU_CHECK_IGNORE(cdf->cuStreamDestroy(stream), "Couldn't destroy cuda stream");
   }
 
-  class img_t: public platf::img_t {
+  class cuda_img_t: public platf::img_t {
   public:
     tex_t tex;
   };
@@ -215,7 +215,7 @@ namespace cuda {
   public:
     int
     convert(platf::img_t &img) override {
-      return sws.convert(frame->data[0], frame->data[1], frame->linesize[0], frame->linesize[1], tex_obj(((img_t *) &img)->tex), stream.get());
+      return sws.convert(frame->data[0], frame->data[1], frame->linesize[0], frame->linesize[1], tex_obj(((cuda_img_t *) &img)->tex), stream.get());
     }
   };
 
@@ -646,7 +646,7 @@ namespace cuda {
           return platf::capture_e::error;
         }
 
-        if (((img_t *) img)->tex.copy((std::uint8_t *) device_ptr, img->height, img->row_pitch)) {
+        if (((cuda_img_t *) img)->tex.copy((std::uint8_t *) device_ptr, img->height, img->row_pitch)) {
           return platf::capture_e::error;
         }
 
@@ -660,7 +660,7 @@ namespace cuda {
 
       std::shared_ptr<platf::img_t>
       alloc_img() override {
-        auto img = std::make_shared<cuda::img_t>();
+        auto img = std::make_shared<cuda_img_t>();
 
         img->data = nullptr;
         img->width = width;
