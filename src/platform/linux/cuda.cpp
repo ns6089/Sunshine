@@ -1,5 +1,6 @@
 #include <bitset>
 
+#include <cuda_runtime.h>
 #include <NvFBC.h>
 #include <ffnvcodec/dynlink_loader.h>
 
@@ -557,6 +558,17 @@ namespace cuda {
       reinit(bool cursor) {
         if (handle.stop()) {
           return platf::capture_e::error;
+        }
+
+        {
+          int i = 0;
+          if (cudaGetDevice(&i)) {
+            // initialize CUDA thread device context if missing
+            if (cudaSetDevice(0)) {
+              BOOST_LOG(error) << "Failed to initialize CUDA thread device context for NvFBC";
+              return platf::capture_e::error;
+            }
+          }
         }
 
         cursor_visible = cursor;
