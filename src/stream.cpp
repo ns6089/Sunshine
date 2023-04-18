@@ -9,6 +9,7 @@
 #include <openssl/err.h>
 
 #include <boost/endian/arithmetic.hpp>
+#include <boost/format.hpp>
 
 extern "C" {
 #include <moonlight-common-c/src/RtpAudioQueue.h>
@@ -1003,6 +1004,47 @@ namespace stream {
     // Video traffic is sent on this thread
     platf::adjust_thread_priority(platf::thread_priority_e::high);
 
+    struct {
+      using steady_clock = std::chrono::steady_clock;
+      struct {
+        steady_clock::time_point last_print_time = steady_clock::now();
+        uint16_t latency_min = std::numeric_limits<uint16_t>::max();
+        uint16_t latency_max = 0;
+        uint32_t latency_total = 0;
+        uint32_t calls = 0;
+      } data;
+
+      uint16_t
+      convert_latency(const std::chrono::steady_clock::duration &duration) const {
+        const auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+        return (uint16_t) std::clamp<decltype(duration_us)>((duration_us + 50) / 100, 0, std::numeric_limits<uint16_t>::max());
+      }
+
+      void
+      print_info(const std::chrono::steady_clock::time_point &frame_timestamp, std::chrono::seconds interval_in_seconds) {
+        if (steady_clock::now() > data.last_print_time + interval_in_seconds) {
+          double latency_min_ms = data.latency_min / 10.;
+          double latency_max_ms = data.latency_max / 10.;
+          double latency_avg_ms = data.latency_total / 10. / data.calls;
+
+          auto fp = boost::format("%1$.1f");
+          BOOST_LOG(info) << "Latency (min/max/avg): " << fp % latency_min_ms << "ms/" << fp % latency_max_ms << "ms/" << fp % latency_avg_ms << "ms";
+          data = {};
+        }
+
+        uint16_t latency = convert_latency(std::chrono::steady_clock::now() - frame_timestamp);
+        data.latency_min = std::min(data.latency_min, latency);
+        data.latency_max = std::max(data.latency_max, latency);
+        data.latency_total += latency;
+        data.calls += 1;
+      }
+    } latency_stats_tracker;
+
+    auto duration_to_latency = [](const std::chrono::steady_clock::duration &duration) {
+      const auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+      return (uint16_t) std::clamp<decltype(duration_us)>((duration_us + 50) / 100, 0, std::numeric_limits<uint16_t>::max());
+    };
+
     while (auto packet = packets->pop()) {
       if (shutdown_event->peek()) {
         break;
@@ -1014,6 +1056,10 @@ namespace stream {
       auto av_packet = packet->av_packet;
       std::string_view payload { (char *) av_packet->data, (size_t) av_packet->size };
       std::vector<uint8_t> payload_new;
+
+      if (packet->frame_timestamp) {
+        latency_stats_tracker.print_info(*packet->frame_timestamp, 10s);
+      }
 
       video_short_frame_header_t frame_header = {};
       frame_header.headerType = 0x01;  // Short header type
