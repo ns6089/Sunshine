@@ -145,7 +145,7 @@ namespace platf::dxgi {
       }
 
       std::shared_ptr<img_t> img_out;
-      auto status = snapshot(pull_free_image_cb, img_out, 1000ms, *cursor);
+      auto status = snapshot(pull_free_image_cb, img_out, config::video.straight ? 100ms : 1000ms, *cursor);
       switch (status) {
         case platf::capture_e::reinit:
         case platf::capture_e::error:
