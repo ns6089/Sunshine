@@ -161,7 +161,10 @@ namespace platf::dxgi {
     bool
     lock() {
       if (_locked) return true;
-      HRESULT status = _mutex->AcquireSync(0, INFINITE);
+      HRESULT status;
+      for (int tries = 3; tries > 0 && (status = _mutex->AcquireSync(0, 1000)) == WAIT_TIMEOUT; tries--) {
+        BOOST_LOG(info) << "Timeout when attempting to acquire texture mutex, retrying";
+      }
       if (status == S_OK) {
         _locked = true;
       }
@@ -379,9 +382,9 @@ namespace platf::dxgi {
       }
 
       // Acquire encoder mutex to synchronize with capture code
-      auto status = img_ctx.encoder_mutex->AcquireSync(0, INFINITE);
-      if (status != S_OK) {
-        BOOST_LOG(error) << "Failed to acquire encoder mutex [0x"sv << util::hex(status).to_string_view() << ']';
+      auto lock_helper = texture_lock_helper(img_ctx.encoder_mutex.get());
+      if (!lock_helper.lock()) {
+        BOOST_LOG(error) << "Failed to acquire encoder texture mutex";
         return -1;
       }
 
@@ -397,9 +400,6 @@ namespace platf::dxgi {
       device_ctx->PSSetShader(img.format == DXGI_FORMAT_R16G16B16A16_FLOAT ? convert_UV_fp16_ps.get() : convert_UV_ps.get(), nullptr, 0);
       device_ctx->RSSetViewports(1, &outUV_view);
       device_ctx->Draw(3, 0);
-
-      // Release encoder mutex to allow capture code to reuse this image
-      img_ctx.encoder_mutex->ReleaseSync(0);
 
       ID3D11ShaderResourceView *emptyShaderResourceView = nullptr;
       device_ctx->PSSetShaderResources(0, 1, &emptyShaderResourceView);
