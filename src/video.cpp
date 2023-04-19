@@ -486,7 +486,7 @@ namespace video {
       std::make_optional<encoder_t::option_t>({ "qp"s, &config::video.qp }),
       "h264_nvenc"s,
     },
-    PARALLEL_ENCODING,
+    0, // PARALLEL_ENCODING,
 #ifdef _WIN32
     dxgi_make_hwdevice_ctx
 #else

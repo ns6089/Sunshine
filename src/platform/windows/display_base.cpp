@@ -113,6 +113,9 @@ namespace platf::dxgi {
     if (config::video.unpaced) {
       BOOST_LOG(info) << "Using experimental unpaced path";
     }
+    if (config::video.straight) {
+      BOOST_LOG(info) << "Using experimental straight path";
+    }
 
     while (true) {
       // This will return false if the HDR state changes or for any number of other

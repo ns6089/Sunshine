@@ -372,7 +372,8 @@ namespace config {
     {},  // adapter_name
     {},  // output_name
     true,  // dwmflush
-    false, // unpaced
+    true, // unpaced
+    true, // straight
   };
 
   audio_t audio {};
@@ -959,6 +960,7 @@ namespace config {
     string_f(vars, "output_name", video.output_name);
     bool_f(vars, "dwmflush", video.dwmflush);
     bool_f(vars, "unpaced", video.unpaced);
+    bool_f(vars, "straight", video.straight);
 
     path_f(vars, "pkey", nvhttp.pkey);
     path_f(vars, "cert", nvhttp.cert);

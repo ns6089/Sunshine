@@ -58,6 +58,7 @@ namespace config {
     std::string output_name;
     bool dwmflush;
     bool unpaced;
+    bool straight;
   };
 
   struct audio_t {
