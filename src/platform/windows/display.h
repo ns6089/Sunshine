@@ -163,6 +163,13 @@ namespace platf::dxgi {
       return (capture_format == DXGI_FORMAT_R16G16B16A16_FLOAT) ? 8 : 4;
     }
 
+    bool has_mouse_cursor = false;
+
+    bool
+    wait_for_output_vblank() {
+      return output && output->WaitForVBlank() == S_OK;
+    }
+
     const char *
     dxgi_format_to_string(DXGI_FORMAT format);
     const char *
