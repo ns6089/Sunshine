@@ -71,7 +71,7 @@ namespace platf {
   }
 
   void
-  nv12_zero_device::set_colorspace(std::uint32_t colorspace, std::uint32_t color_range) {
+  nv12_zero_device::apply_colorspace(std::uint32_t colorspace, std::uint32_t color_range) {
   }
 
   int

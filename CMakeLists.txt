@@ -485,6 +485,11 @@ ${CMAKE_BINARY_DIR}/generated-src/${filename}.h")
     configure_file(sunshine.service.in sunshine.service @ONLY)
 endif()
 
+file(GLOB NVENC_SOURCES CONFIGURE_DEPENDS
+        "src/nvenc/*.cpp"
+        "src/nvenc/*.h")
+list(APPEND PLATFORM_TARGET_FILES ${NVENC_SOURCES})
+
 configure_file(src/version.h.in version.h @ONLY)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
@@ -519,6 +524,8 @@ set(SUNSHINE_TARGET_FILES
         src/stream.h
         src/video.cpp
         src/video.h
+        src/video_colorspace.cpp
+        src/video_colorspace.h
         src/input.cpp
         src/input.h
         src/audio.cpp
