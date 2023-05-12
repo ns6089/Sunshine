@@ -98,6 +98,7 @@ namespace platf::dxgi {
   capture_e
   display_base_t::capture(const push_captured_image_cb_t &push_captured_image_cb, const pull_free_image_cb_t &pull_free_image_cb, bool *cursor) {
     auto next_frame = std::chrono::steady_clock::now();
+    const auto display_frame_interval = std::chrono::nanoseconds { 1s } * display_refresh_rate.Denominator / display_refresh_rate.Numerator;
     const auto client_frame_interval = std::chrono::nanoseconds { 1s } / client_frame_rate;
 
     // Keep the display awake during capture. If the display goes to sleep during
@@ -117,23 +118,37 @@ namespace platf::dxgi {
         return platf::capture_e::reinit;
       }
 
-      // If the wait time is positive and below 1 second, wait the specified time
-      // and offset the next frame time from the exact current frame time target.
-      auto wait_time = next_frame - std::chrono::steady_clock::now();
-      if (wait_time > 0s && wait_time < 1s) {
-        high_precision_sleep(wait_time);
-        next_frame += client_frame_interval;
+      std::chrono::milliseconds snapshot_timeout = 1000ms;
+
+      if (display_refresh_rate_rounded == client_frame_rate) {
+        output->WaitForVBlank();
+        if (mouse_pointer_visible_on_display) {
+          high_precision_sleep(display_frame_interval / 2);
+          snapshot_timeout = 0ms;
+        }
+        else {
+          snapshot_timeout = std::chrono::duration_cast<std::chrono::milliseconds>(display_frame_interval / 2);
+        }
       }
       else {
-        // If the wait time is negative (meaning the frame is past due) or the
-        // computed wait time is beyond a second (meaning possible clock issues),
-        // just capture the frame now and resynchronize the frame interval with
-        // the current time.
-        next_frame = std::chrono::steady_clock::now() + client_frame_interval;
+        // If the wait time is positive and below 1 second, wait the specified time
+        // and offset the next frame time from the exact current frame time target.
+        auto wait_time = next_frame - std::chrono::steady_clock::now();
+        if (wait_time > 0s && wait_time < 1s) {
+          high_precision_sleep(wait_time);
+          next_frame += client_frame_interval;
+        }
+        else {
+          // If the wait time is negative (meaning the frame is past due) or the
+          // computed wait time is beyond a second (meaning possible clock issues),
+          // just capture the frame now and resynchronize the frame interval with
+          // the current time.
+          next_frame = std::chrono::steady_clock::now() + client_frame_interval;
+        }
       }
 
       std::shared_ptr<img_t> img_out;
-      auto status = snapshot(pull_free_image_cb, img_out, 1000ms, *cursor);
+      auto status = snapshot(pull_free_image_cb, img_out, snapshot_timeout, *cursor);
       switch (status) {
         case platf::capture_e::reinit:
         case platf::capture_e::error:

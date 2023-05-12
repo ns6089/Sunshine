@@ -146,6 +146,8 @@ namespace platf::dxgi {
 
     util::safe_ptr_v2<std::remove_pointer_t<HANDLE>, BOOL, CloseHandle> timer;
 
+    bool mouse_pointer_visible_on_display = false;
+
     typedef enum _D3DKMT_SCHEDULINGPRIORITYCLASS {
       D3DKMT_SCHEDULINGPRIORITYCLASS_IDLE,
       D3DKMT_SCHEDULINGPRIORITYCLASS_BELOW_NORMAL,

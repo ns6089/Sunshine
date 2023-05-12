@@ -932,6 +932,8 @@ namespace platf::dxgi {
       cursor_xor.set_pos(frame_info.PointerPosition.Position.x, frame_info.PointerPosition.Position.y, frame_info.PointerPosition.Visible);
     }
 
+    mouse_pointer_visible_on_display = (cursor_alpha.visible || cursor_xor.visible);
+
     const bool blend_mouse_cursor_flag = (cursor_alpha.visible || cursor_xor.visible) && cursor_visible;
 
     texture2d_t src {};
