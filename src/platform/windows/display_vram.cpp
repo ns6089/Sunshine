@@ -882,57 +882,79 @@ namespace platf::dxgi {
     HRESULT status;
 
     DXGI_OUTDUPL_FRAME_INFO frame_info;
-
-    resource_t::pointer res_p {};
-    auto capture_status = dup.next_frame(frame_info, timeout, &res_p);
-    resource_t res { res_p };
-
-    if (capture_status != capture_e::ok) {
-      return capture_status;
-    }
-
-    const bool mouse_update_flag = frame_info.LastMouseUpdateTime.QuadPart != 0 || frame_info.PointerShapeBufferSize > 0;
-    const bool frame_update_flag = frame_info.AccumulatedFrames != 0 || frame_info.LastPresentTime.QuadPart != 0;
-    const bool update_flag = mouse_update_flag || frame_update_flag;
-
-    if (!update_flag) {
-      return capture_e::timeout;
-    }
-
+    resource_t res;
+    bool frame_update_flag = false;
     std::optional<std::chrono::steady_clock::time_point> frame_timestamp;
-    if (auto qpc_displayed = std::max(frame_info.LastPresentTime.QuadPart, frame_info.LastMouseUpdateTime.QuadPart)) {
-      // Translate QueryPerformanceCounter() value to steady_clock time point
-      frame_timestamp = std::chrono::steady_clock::now() - qpc_time_difference(qpc_counter(), qpc_displayed);
-    }
+    bool repeating = false;
 
-    if (frame_info.PointerShapeBufferSize > 0) {
-      DXGI_OUTDUPL_POINTER_SHAPE_INFO shape_info {};
+    for (;;) {
+      auto duplication_call_timestamp = std::chrono::steady_clock::now();
 
-      util::buffer_t<std::uint8_t> img_data { frame_info.PointerShapeBufferSize };
+      resource_t::pointer res_p {};
+      auto capture_status = dup.next_frame(frame_info, repeating ? 0ms : timeout, &res_p);
+      res.reset(res_p);
 
-      UINT dummy;
-      status = dup.dup->GetFramePointerShape(img_data.size(), std::begin(img_data), &dummy, &shape_info);
-      if (FAILED(status)) {
-        BOOST_LOG(error) << "Failed to get new pointer shape [0x"sv << util::hex(status).to_string_view() << ']';
-
-        return capture_e::error;
+      if (capture_status != capture_e::ok) {
+        return capture_status;
       }
 
-      auto alpha_cursor_img = make_cursor_alpha_image(img_data, shape_info);
-      auto xor_cursor_img = make_cursor_xor_image(img_data, shape_info);
+      const bool mouse_update_flag = frame_info.LastMouseUpdateTime.QuadPart != 0 || frame_info.PointerShapeBufferSize > 0;
+      frame_update_flag = frame_info.AccumulatedFrames != 0 || frame_info.LastPresentTime.QuadPart != 0;
+      const bool update_flag = mouse_update_flag || frame_update_flag;
 
-      if (!set_cursor_texture(device.get(), cursor_alpha, std::move(alpha_cursor_img), shape_info) ||
-          !set_cursor_texture(device.get(), cursor_xor, std::move(xor_cursor_img), shape_info)) {
-        return capture_e::error;
+      if (!update_flag && !repeating) {
+        return capture_e::timeout;
       }
-    }
 
-    if (frame_info.LastMouseUpdateTime.QuadPart) {
-      cursor_alpha.set_pos(frame_info.PointerPosition.Position.x, frame_info.PointerPosition.Position.y, frame_info.PointerPosition.Visible);
-      cursor_xor.set_pos(frame_info.PointerPosition.Position.x, frame_info.PointerPosition.Position.y, frame_info.PointerPosition.Visible);
-    }
+      if (auto qpc_displayed = std::max(frame_info.LastPresentTime.QuadPart, frame_info.LastMouseUpdateTime.QuadPart)) {
+        // Translate QueryPerformanceCounter() value to steady_clock time point
+        frame_timestamp = std::chrono::steady_clock::now() - qpc_time_difference(qpc_counter(), qpc_displayed);
+      }
 
-    mouse_pointer_visible_on_display = (cursor_alpha.visible || cursor_xor.visible);
+      if (frame_info.PointerShapeBufferSize > 0) {
+        DXGI_OUTDUPL_POINTER_SHAPE_INFO shape_info {};
+
+        util::buffer_t<std::uint8_t> img_data { frame_info.PointerShapeBufferSize };
+
+        UINT dummy;
+        status = dup.dup->GetFramePointerShape(img_data.size(), std::begin(img_data), &dummy, &shape_info);
+        if (FAILED(status)) {
+          BOOST_LOG(error) << "Failed to get new pointer shape [0x"sv << util::hex(status).to_string_view() << ']';
+
+          return capture_e::error;
+        }
+
+        auto alpha_cursor_img = make_cursor_alpha_image(img_data, shape_info);
+        auto xor_cursor_img = make_cursor_xor_image(img_data, shape_info);
+
+        if (!set_cursor_texture(device.get(), cursor_alpha, std::move(alpha_cursor_img), shape_info) ||
+            !set_cursor_texture(device.get(), cursor_xor, std::move(xor_cursor_img), shape_info)) {
+          return capture_e::error;
+        }
+      }
+
+      if (frame_info.LastMouseUpdateTime.QuadPart) {
+        cursor_alpha.set_pos(frame_info.PointerPosition.Position.x, frame_info.PointerPosition.Position.y, frame_info.PointerPosition.Visible);
+        cursor_xor.set_pos(frame_info.PointerPosition.Position.x, frame_info.PointerPosition.Position.y, frame_info.PointerPosition.Visible);
+      }
+
+      bool old_mouse_pointer_visible_on_display = mouse_pointer_visible_on_display;
+      mouse_pointer_visible_on_display = (cursor_alpha.visible || cursor_xor.visible);
+      if (!repeating && !frame_update_flag && mouse_pointer_visible_on_display && !old_mouse_pointer_visible_on_display &&
+          display_refresh_rate_rounded == client_frame_rate) {
+        auto display_frame_interval = std::chrono::nanoseconds { 1s } * display_refresh_rate.Denominator / display_refresh_rate.Numerator;
+        auto wait_time = display_frame_interval / 2 - (std::chrono::steady_clock::now() - duplication_call_timestamp);
+        if (wait_time > 0ns) {
+          BOOST_LOG(debug) << "sleeping for " << std::chrono::duration_cast<std::chrono::milliseconds>(wait_time).count() << "ms";
+          dup.release_frame();
+          high_precision_sleep(wait_time);
+          repeating = true;
+          continue;
+        }
+      }
+
+      break;
+    }
 
     const bool blend_mouse_cursor_flag = (cursor_alpha.visible || cursor_xor.visible) && cursor_visible;
 
