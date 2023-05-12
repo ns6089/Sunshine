@@ -108,7 +108,6 @@ namespace platf::dxgi {
   public:
     dup_t dup;
     bool has_frame {};
-    bool use_dwmflush {};
 
     capture_e
     next_frame(DXGI_OUTDUPL_FRAME_INFO &frame_info, std::chrono::milliseconds timeout, resource_t::pointer *res_p);
