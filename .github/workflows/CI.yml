@@ -737,7 +737,7 @@ jobs:
 
   build_win:
     name: Windows
-    runs-on: windows-2019
+    runs-on: windows-2022
     needs: [check_changelog, setup_release]
 
     steps:
