@@ -1,0 +1,19 @@
+{
+  "dependencies": [
+    "boost-locale",
+	"boost-log",
+	"boost-filesystem",
+	"boost-program-options",
+	"boost-json",
+	"boost-process",
+	"boost-crc",
+	"opus",
+	{
+		"name": "ffmpeg",
+		"features": [ "amf", "nvcodec", "qsv", "x264" ]
+	},
+	"openssl",
+	"curl",
+	"miniupnpc"
+  ]
+}

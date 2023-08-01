@@ -1,0 +1,35 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "vcpkg",
+      "toolchainFile": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg-overlay/triplets",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+        "VCPKG_BOOTSTRAP_OPTIONS": "-disableMetrics",
+        "VCPKG_INSTALL_OPTIONS": "--x-abi-tools-use-exact-versions;--no-print-usage;--clean-buildtrees-after-build;--clean-packages-after-build"
+      },
+      "environment": {
+        "VCPKG_BINARY_SOURCES": "clear;default,read;files,${sourceDir}/../build/vcpkg_cache,readwrite;$penv{VCPKG_BINARY_SOURCES}",
+		    "UseMultiToolTask": "true",
+		    "EnforceProcessCountAcrossBuilds": "true"
+      },
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "Release",
+      "configuration": "Release",
+      "configurePreset": "vcpkg"
+    },
+    {
+      "name": "Debug",
+      "configuration": "Debug",
+      "configurePreset": "vcpkg"
+    }
+  ]
+}
