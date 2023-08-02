@@ -13,6 +13,7 @@
 typedef long NTSTATUS;
 
 #include "display.h"
+#include "display_cuda.h"
 #include "misc.h"
 #include "src/config.h"
 #include "src/main.h"
@@ -883,6 +884,13 @@ namespace platf {
     }
     else if (hwdevice_type == mem_type_e::system) {
       auto disp = std::make_shared<dxgi::display_ram_t>();
+
+      if (!disp->init(config, display_name)) {
+        return disp;
+      }
+    }
+    else if (hwdevice_type == mem_type_e::cuda) {
+      auto disp = std::make_shared<dxgi::display_cuda_t>();
 
       if (!disp->init(config, display_name)) {
         return disp;

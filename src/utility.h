@@ -445,8 +445,13 @@ namespace util {
   }
 
   inline std::int64_t
+  from_iterators(std::string_view::const_iterator begin, std::string_view::const_iterator end) {
+    return from_chars(std::addressof(*begin), std::addressof(*begin) + std::distance(begin, end));
+  }
+
+  inline std::int64_t
   from_view(const std::string_view &number) {
-    return from_chars(std::to_address(std::begin(number)), std::to_address(std::end(number)));
+    return from_iterators(std::begin(number), std::end(number));
   }
 
   template <class X, class Y>
