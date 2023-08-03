@@ -532,10 +532,10 @@ namespace nvenc {
         if (!last_error_string.empty()) last_error_string += " ";
       }
       last_error_string += status_string(status);
-      return false;
+      return true;
     }
 
-    return true;
+    return false;
   }
 
 }  // namespace nvenc

@@ -564,7 +564,7 @@ namespace video {
   static encoder_t nvenc_standalone {
     "nvenc-standalone"sv,
     std::make_unique<encoder_platform_formats_nvenc>(
-      platf::mem_type_e::dxgi,
+      platf::mem_type_e::cuda,
       platf::pix_fmt_e::nv12, platf::pix_fmt_e::p010),
     {
       // Common options

@@ -13,6 +13,7 @@ namespace platf::dxgi {
   public:
     _COM_SMARTPTR_TYPEDEF(IDXGIResource, IID_IDXGIResource);
     _COM_SMARTPTR_TYPEDEF(ID3D11Resource, IID_ID3D11Resource);
+    _COM_SMARTPTR_TYPEDEF(ID3D11Texture2D, IID_ID3D11Texture2D);
 
     ~display_cuda_t();
 
@@ -23,21 +24,26 @@ namespace platf::dxgi {
     alloc_img() override;
 
     int
-    dummy_img(img_t *img) override { return -1; }
+    dummy_img(img_t *img) override { return 0; }
 
     int
     complete_img(img_t *img, bool dummy) override { return -1; }
 
     capture_e
-    snapshot(const pull_free_image_cb_t &pull_free_image_cb, std::shared_ptr<platf::img_t> &img_out, std::chrono::milliseconds timeout, bool cursor_visible) override;
+    capture(const push_captured_image_cb_t &push_captured_image_cb, const pull_free_image_cb_t &pull_free_image_cb, bool *cursor) override;
+
+    capture_e
+    snapshot(const pull_free_image_cb_t &pull_free_image_cb, std::shared_ptr<platf::img_t> &img_out, std::chrono::milliseconds timeout, bool cursor_visible) { return capture_e::error; }
 
     std::vector<DXGI_FORMAT>
     get_supported_capture_formats() override { return { DXGI_FORMAT_B8G8R8A8_UNORM }; }
 
-  private:
+    std::unique_ptr<nvenc_encode_device_t>
+    make_nvenc_encode_device(pix_fmt_e pix_fmt) override;
+
     int cuda_device = 0;
     // cudaStream_t capture_map_stream = nullptr;
-    // cudaEvent_t capture_mapped_event = nullptr;
+    //  cudaEvent_t capture_mapped_event = nullptr;
 
     struct cuda_array_deleter {
       void
@@ -46,13 +52,30 @@ namespace platf::dxgi {
       }
     };
 
-    struct cuda_img_t: img_t {
-      std::unique_ptr<cudaArray, cuda_array_deleter> cuda_array;
-      std::shared_ptr<display_cuda_t> display;
+    struct cuda_resource_unregistrator {
+      void
+      operator()(cudaGraphicsResource_t p) {
+        if (p) cudaGraphicsUnregisterResource(p);
+      }
     };
 
-    std::shared_ptr<cudaArray> capture_surface;
+    struct cuda_img_t: img_t {
+      std::shared_ptr<display_cuda_t> display;  // must be above all cuda functions
+      // std::unique_ptr<cudaArray, cuda_array_deleter> cuda_array;
+      ID3D11Texture2DPtr texture;
+      std::unique_ptr<cudaGraphicsResource, cuda_resource_unregistrator> cuda_resource;
+      bool cuda_resource_mapped = false;
+      cudaArray_t cuda_array;
 
+      ~cuda_img_t() {
+        if (cuda_resource_mapped) {
+          auto res = cuda_resource.get();
+          cudaGraphicsUnmapResources(1, &res, 0);
+        }
+      }
+    };
+
+    /*
     struct encoder_instance_t {
       cudaStream_t cuda_stream;
       // cudaEvent_t capture_converted_event = nullptr;
@@ -61,6 +84,7 @@ namespace platf::dxgi {
     };
     // std::mutex encoders_mutex;
     std::list<encoder_instance_t> encoders;
+    */
   };
 
 }  // namespace platf::dxgi
