@@ -6,7 +6,7 @@
 namespace nvenc {
 
   nvenc_cuda::nvenc_cuda(CUcontext cu_context):
-      // async_event_winapi(CreateEvent(nullptr, FALSE, FALSE, nullptr)),
+      async_event_winapi(CreateEvent(nullptr, FALSE, FALSE, nullptr)),
       nvenc_base(NV_ENC_DEVICE_TYPE_CUDA, cu_context) {
     async_event_handle = async_event_winapi.get();
   }
@@ -15,6 +15,7 @@ namespace nvenc {
     if (encoder) destroy_encoder();
 
     if (cuda_array) cudaFreeArray(cuda_array);
+    if (cuda_stream) cudaStreamDestroy(cuda_stream);
 
     if (dll) {
       FreeLibrary(dll);
@@ -111,6 +112,17 @@ namespace nvenc {
       }
 
       registered_input_buffer = register_resource.registeredResource;
+    }
+
+    if (!cuda_stream) {
+      cudaError_t cuda_error;
+      cuda_error = cudaStreamCreateWithFlags(&cuda_stream, cudaStreamDefault);
+      if (cuda_error != cudaSuccess) return false;
+    }
+
+    if (nvenc_failed(nvenc->nvEncSetIOCudaStreams(encoder, &cuda_stream, &cuda_stream))) {
+      BOOST_LOG(error) << "NvEncSetIOCudaStreams failed: " << last_error_string;
+      return false;
     }
 
     return true;

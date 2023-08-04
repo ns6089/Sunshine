@@ -185,6 +185,8 @@ namespace nvenc {
     init_params.enablePTD = 1;
     init_params.enableEncodeAsync = async_event_handle ? 1 : 0;
     init_params.enableWeightedPrediction = config.weighted_prediction && get_encoder_cap(NV_ENC_CAPS_SUPPORT_WEIGHTED_PREDICTION);
+    // TODO: make this optional!
+    init_params.enableOutputInVidmem = 1;
 
     init_params.encodeWidth = encoder_params.width;
     init_params.darWidth = encoder_params.width;
@@ -350,6 +352,10 @@ namespace nvenc {
       nvenc->nvEncDestroyBitstreamBuffer(encoder, output_bitstream);
       output_bitstream = nullptr;
     }
+    if (registered_output_buffer) {
+      nvenc->nvEncUnregisterResource(encoder, registered_output_buffer);
+      registered_output_buffer = nullptr;
+    }
     if (encoder && async_event_handle) {
       NV_ENC_EVENT_PARAMS event_params = { NV_ENC_EVENT_PARAMS_VER };
       event_params.completionEvent = async_event_handle;
@@ -375,16 +381,25 @@ namespace nvenc {
     }
 
     assert(registered_input_buffer);
-    assert(output_bitstream);
+    assert(output_bitstream || registered_output_buffer);
 
     NV_ENC_MAP_INPUT_RESOURCE mapped_input_buffer = { NV_ENC_MAP_INPUT_RESOURCE_VER };
     mapped_input_buffer.registeredResource = registered_input_buffer;
 
     if (nvenc_failed(nvenc->nvEncMapInputResource(encoder, &mapped_input_buffer))) {
-      BOOST_LOG(error) << "NvEncMapInputResource failed: " << last_error_string;
+      BOOST_LOG(error) << "NvEncMapInputResource input failed: " << last_error_string;
       return {};
     }
-    auto unmap_guard = util::fail_guard([&] { nvenc->nvEncUnmapInputResource(encoder, &mapped_input_buffer); });
+    auto unmap_input_guard = util::fail_guard([&] { nvenc->nvEncUnmapInputResource(encoder, &mapped_input_buffer); });
+
+    NV_ENC_MAP_INPUT_RESOURCE mapped_output_buffer = { NV_ENC_MAP_INPUT_RESOURCE_VER };
+    mapped_output_buffer.registeredResource = registered_output_buffer;
+    
+    if (registered_output_buffer && nvenc_failed(nvenc->nvEncMapInputResource(encoder, &mapped_output_buffer))) {
+      BOOST_LOG(error) << "NvEncMapInputResource output failed: " << last_error_string;
+      return {};
+    }
+    auto unmap_output_guard = util::fail_guard([&] { nvenc->nvEncUnmapInputResource(encoder, &mapped_output_buffer); });
 
     NV_ENC_PIC_PARAMS pic_params = { NV_ENC_PIC_PARAMS_VER };
     pic_params.inputWidth = encoder_params.width;
@@ -394,7 +409,7 @@ namespace nvenc {
     pic_params.pictureStruct = NV_ENC_PIC_STRUCT_FRAME;
     pic_params.inputBuffer = mapped_input_buffer.mappedResource;
     pic_params.bufferFmt = mapped_input_buffer.mappedBufferFmt;
-    pic_params.outputBitstream = output_bitstream;
+    pic_params.outputBitstream = registered_output_buffer ? mapped_output_buffer.mappedResource : output_bitstream;
     pic_params.completionEvent = async_event_handle;
 
     if (nvenc_failed(nvenc->nvEncEncodePicture(encoder, &pic_params))) {
@@ -402,27 +417,47 @@ namespace nvenc {
       return {};
     }
 
-    NV_ENC_LOCK_BITSTREAM lock_bitstream = { NV_ENC_LOCK_BITSTREAM_VER };
-    lock_bitstream.outputBitstream = output_bitstream;
-    lock_bitstream.doNotWait = 0;
-
-    if (async_event_handle && !wait_for_async_event(100)) {
+    if (async_event_handle && !wait_for_async_event(1000)) {
       BOOST_LOG(error) << "NvEnc: frame " << frame_index << " encode wait timeout";
       return {};
     }
 
-    if (nvenc_failed(nvenc->nvEncLockBitstream(encoder, &lock_bitstream))) {
-      BOOST_LOG(error) << "NvEncLockBitstream failed: " << last_error_string;
-      return {};
-    }
+    nvenc_encoded_frame encoded_frame;
+    encoded_frame.after_ref_frame_invalidation = encoder_state.rfi_needs_confirmation;
+    if (registered_output_buffer) {
+      unmap_output_guard.disable();
+      
+      if (nvenc->nvEncUnmapInputResource(encoder, &mapped_output_buffer)) {
+        BOOST_LOG(error) << "NvEncUnmapInputResource output failed: " << last_error_string;
+        return {};
+      }
 
-    auto data_pointer = (uint8_t *) lock_bitstream.bitstreamBufferPtr;
-    nvenc_encoded_frame encoded_frame {
-      { data_pointer, data_pointer + lock_bitstream.bitstreamSizeInBytes },
-      lock_bitstream.outputTimeStamp,
-      lock_bitstream.pictureType == NV_ENC_PIC_TYPE_IDR,
-      encoder_state.rfi_needs_confirmation,
-    };
+      auto byte_range = fetch_output_buffer();
+      // TODO: copy elision
+      encoded_frame.data = { byte_range.first, byte_range.second };
+      encoded_frame.frame_index = frame_index;
+      // TODO: handle first frame and rfi
+      encoded_frame.idr = force_idr;
+    }
+    else {
+      NV_ENC_LOCK_BITSTREAM lock_bitstream = { NV_ENC_LOCK_BITSTREAM_VER };
+      lock_bitstream.outputBitstream = output_bitstream;
+      lock_bitstream.doNotWait = 0;
+
+      if (nvenc_failed(nvenc->nvEncLockBitstream(encoder, &lock_bitstream))) {
+        BOOST_LOG(error) << "NvEncLockBitstream failed: " << last_error_string;
+        return {};
+      }
+
+      auto data_pointer = (uint8_t *) lock_bitstream.bitstreamBufferPtr;
+      encoded_frame.data = { data_pointer, data_pointer + lock_bitstream.bitstreamSizeInBytes };
+      encoded_frame.frame_index = lock_bitstream.outputTimeStamp;
+      encoded_frame.idr = lock_bitstream.pictureType == NV_ENC_PIC_TYPE_IDR;
+
+      if (nvenc_failed(nvenc->nvEncUnlockBitstream(encoder, lock_bitstream.outputBitstream))) {
+        BOOST_LOG(error) << "NvEncUnlockBitstream failed: " << last_error_string;
+      }
+    }
 
     if (encoder_state.rfi_needs_confirmation) {
       // Invalidation request has been fulfilled, and video network packet will be marked as such
@@ -433,10 +468,6 @@ namespace nvenc {
 
     if (encoded_frame.idr) {
       BOOST_LOG(debug) << "NvEnc: idr frame " << encoded_frame.frame_index;
-    }
-
-    if (nvenc_failed(nvenc->nvEncUnlockBitstream(encoder, lock_bitstream.outputBitstream))) {
-      BOOST_LOG(error) << "NvEncUnlockBitstream failed: " << last_error_string;
     }
 
     if (config::sunshine.min_log_level <= 1) {

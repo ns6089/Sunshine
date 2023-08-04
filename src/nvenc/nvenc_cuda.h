@@ -31,6 +31,8 @@ namespace nvenc {
 
     HMODULE dll = NULL;
     cudaArray_t cuda_array = nullptr;
+    cudaStream_t cuda_stream = nullptr;
+    NV_ENC_ENCODE_OUT_PARAMS* cuda_buffer = nullptr;
   };
 
 }  // namespace nvenc

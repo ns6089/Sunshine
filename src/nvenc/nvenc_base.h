@@ -42,6 +42,9 @@ namespace nvenc {
     virtual bool
     wait_for_async_event(uint32_t timeout_ms) { return false; }
 
+    virtual std::pair<uint8_t*, uint8_t*>
+    fetch_output_buffer() { return { nullptr, nullptr }; };
+
     bool
     nvenc_failed(NVENCSTATUS status);
 
@@ -61,6 +64,7 @@ namespace nvenc {
 
     // Derived classes set these variables
     NV_ENC_REGISTERED_PTR registered_input_buffer = nullptr;
+    NV_ENC_REGISTERED_PTR registered_output_buffer = nullptr;
     void *async_event_handle = nullptr;
 
     std::string last_error_string;
