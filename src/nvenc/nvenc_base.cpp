@@ -15,7 +15,7 @@
 // - NV_ENC_*_VER definitions where the value inside NVENCAPI_STRUCT_VERSION() was increased
 // - Incompatible struct changes in nvEncodeAPI.h (fields removed, semantics changed, etc.)
 // - Test both old and new drivers with all supported codecs
-#if NVENCAPI_VERSION != MAKE_NVENC_VER(12U, 0U)
+#if NVENCAPI_VERSION != MAKE_NVENC_VER(12U, 2U)
   #error Check and update NVENC code for backwards compatibility!
 #endif
 
@@ -98,7 +98,8 @@ namespace nvenc {
   nvenc_base::create_encoder(const nvenc_config &config, const video::config_t &client_config, const nvenc_colorspace_t &colorspace, NV_ENC_BUFFER_FORMAT buffer_format) {
     // Pick the minimum NvEncode API version required to support the specified codec
     // to maximize driver compatibility. AV1 was introduced in SDK v12.0.
-    minimum_api_version = (client_config.videoFormat <= 1) ? MAKE_NVENC_VER(11U, 0U) : MAKE_NVENC_VER(12U, 0U);
+    // minimum_api_version = (client_config.videoFormat <= 1) ? MAKE_NVENC_VER(11U, 0U) : MAKE_NVENC_VER(12U, 0U);
+    minimum_api_version = NVENCAPI_VERSION;
 
     if (!nvenc && !init_library()) return false;
 
@@ -205,6 +206,10 @@ namespace nvenc {
 
     encoder_params.rfi = get_encoder_cap(NV_ENC_CAPS_SUPPORT_REF_PIC_INVALIDATION);
 
+    if (client_config.videoFormat != 0) {
+      init_params.splitEncodeMode = NV_ENC_SPLIT_AUTO_FORCED_MODE;
+    }
+
     init_params.presetGUID = quality_preset_guid_from_number(config.quality_preset);
     init_params.tuningInfo = NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY;
     init_params.enablePTD = 1;
@@ -218,7 +223,12 @@ namespace nvenc {
     init_params.frameRateNum = client_config.framerate;
     init_params.frameRateDen = 1;
 
-    NV_ENC_PRESET_CONFIG preset_config = { min_struct_version(NV_ENC_PRESET_CONFIG_VER), { min_struct_version(NV_ENC_CONFIG_VER, 7, 8) } };
+    // NV_ENC_PRESET_CONFIG preset_config = { min_struct_version(NV_ENC_PRESET_CONFIG_VER), { min_struct_version(NV_ENC_CONFIG_VER, 7, 8) } };
+    NV_ENC_PRESET_CONFIG preset_config = {
+      .version = NV_ENC_PRESET_CONFIG_VER,
+      .presetCfg = { .version = NV_ENC_CONFIG_VER },
+    };
+
     if (nvenc_failed(nvenc->nvEncGetEncodePresetConfigEx(encoder, init_params.encodeGUID, init_params.presetGUID, init_params.tuningInfo, &preset_config))) {
       BOOST_LOG(error) << "NvEncGetEncodePresetConfigEx failed: " << last_error_string;
       return false;
@@ -250,8 +260,10 @@ namespace nvenc {
     auto set_h264_hevc_common_format_config = [&](auto &format_config) {
       format_config.repeatSPSPPS = 1;
       format_config.idrPeriod = NVENC_INFINITE_GOPLENGTH;
-      format_config.sliceMode = 3;
-      format_config.sliceModeData = client_config.slicesPerFrame;
+      if (client_config.slicesPerFrame > 1) {
+        format_config.sliceMode = 3;
+        format_config.sliceModeData = client_config.slicesPerFrame;
+      }
       if (buffer_is_yuv444()) {
         format_config.chromaFormatIDC = 3;
       }
@@ -318,7 +330,8 @@ namespace nvenc {
         auto &format_config = enc_config.encodeCodecConfig.hevcConfig;
         set_h264_hevc_common_format_config(format_config);
         if (buffer_is_10bit()) {
-          format_config.pixelBitDepthMinus8 = 2;
+          format_config.inputBitDepth = NV_ENC_BIT_DEPTH_10;
+          format_config.outputBitDepth = NV_ENC_BIT_DEPTH_10;
         }
         set_ref_frames(format_config.maxNumRefFramesInDPB, format_config.numRefL0, 5);
         set_minqp_if_enabled(config.min_qp_hevc);
@@ -334,8 +347,8 @@ namespace nvenc {
         format_config.chromaFormatIDC = 1;  // YUV444 not supported by NVENC yet
         format_config.enableBitstreamPadding = config.insert_filler_data;
         if (buffer_is_10bit()) {
-          format_config.inputPixelBitDepthMinus8 = 2;
-          format_config.pixelBitDepthMinus8 = 2;
+          format_config.inputBitDepth = NV_ENC_BIT_DEPTH_10;
+          format_config.outputBitDepth = NV_ENC_BIT_DEPTH_10;
         }
         format_config.colorPrimaries = colorspace.primaries;
         format_config.transferCharacteristics = colorspace.tranfer_function;
@@ -598,6 +611,9 @@ namespace nvenc {
 
   uint32_t
   nvenc_base::min_struct_version(uint32_t version, uint32_t v11_struct_version, uint32_t v12_struct_version) {
+    return version;
+
+    /*
     assert(minimum_api_version);
 
     // Mask off and replace the original NVENCAPI_VERSION
@@ -611,5 +627,6 @@ namespace nvenc {
     }
 
     return version;
+    */
   }
 }  // namespace nvenc
