@@ -77,3 +77,5 @@ if (WIN32)
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_SEARCH_START_STATIC 1)
 endif ()
 
+include(GoogleTest)
+gtest_discover_tests(${PROJECT_NAME})
